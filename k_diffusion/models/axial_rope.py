@@ -35,11 +35,16 @@ def centers(start, stop, num, dtype=None, device=None):
 
 def make_grid(h_pos, w_pos):
     grid = torch.stack(torch.meshgrid(h_pos, w_pos, indexing='ij'), dim=-1)
-    h, w, d = grid.shape
+    h, w, d = grid.shape # (h, w)에 해당하는 변환된 d dim의 좌표
     return grid.view(h * w, d)
 
 
 def bounding_box(h, w, pixel_aspect_ratio=1.0):
+    '''
+    긴 축을 -1 ~ 1 로 변환했을 때의 최소/최댓값
+    h = 30, w = 60일 때 (-0.5, 0.5, -1.0, 1.0)
+    '''
+
     # Adjusted dimensions
     w_adj = w
     h_adj = h * pixel_aspect_ratio
@@ -63,6 +68,7 @@ def make_axial_pos(h, w, pixel_aspect_ratio=1.0, align_corners=False, dtype=None
         h_pos = torch.linspace(y_min, y_max, h, dtype=dtype, device=device)
         w_pos = torch.linspace(x_min, x_max, w, dtype=dtype, device=device)
     else:
+        # 중앙 정렬된 h, w개수 만큼 bounding box 내의 값을 나눔
         h_pos = centers(y_min, y_max, h, dtype=dtype, device=device)
         w_pos = centers(x_min, x_max, w, dtype=dtype, device=device)
     return make_grid(h_pos, w_pos)

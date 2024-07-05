@@ -582,8 +582,12 @@ class TokenMerge(nn.Module):
         self.proj = apply_wd(Linear(in_features * self.h * self.w, out_features, bias=False))
 
     def forward(self, x):
+        # x: (B, H, W, C)
         x = rearrange(x, "... (h nh) (w nw) e -> ... h w (nh nw e)", nh=self.h, nw=self.w)
+        # (B, tile_H, tile_W, T)
+        # patch_size=2일 때 tile_H = H/2
         return self.proj(x)
+        # (B, tile_H, tile_W, OC)
 
 
 class TokenSplitWithoutSkip(nn.Module):
@@ -607,9 +611,13 @@ class TokenSplit(nn.Module):
         self.fac = nn.Parameter(torch.ones(1) * 0.5)
 
     def forward(self, x, skip):
+        # x: (B, tile_H, tile_W, C)
         x = self.proj(x)
+        # x: (B, tile_H, tile_W, OC)
         x = rearrange(x, "... h w (nh nw e) -> ... (h nh) (w nw) e", nh=self.h, nw=self.w)
-        return torch.lerp(skip, x, self.fac.to(x.dtype))
+        # x: (B, H, W, OC)
+        # patch_size=2일 때 H = tile_H*2
+        return torch.lerp(skip, x, self.fac.to(x.dtype)) # skip data와 linear inpterpolation
 
 
 # Configuration
@@ -711,10 +719,13 @@ class ImageTransformerDenoiserModelV2(nn.Module):
 
     def forward(self, x, sigma, aug_cond=None, class_cond=None, mapping_cond=None):
         # Patching
-        x = x.movedim(-3, -1)
-        x = self.patch_in(x)
+        # x: (B, C, H, W)
+        x = x.movedim(-3, -1) # (B, H, W, C)
+        x = self.patch_in(x) # (B, tile_H, tile_W, width)
         # TODO: pixel aspect ratio for nonsquare patches
         pos = make_axial_pos(x.shape[-3], x.shape[-2], device=x.device).view(x.shape[-3], x.shape[-2], 2)
+        # (tile_H, tile_W, 2) 크기로, 각 tile의 위치 정보를 2차원 좌표로 변환. 각 좌표는 [-1, 1] 범위로 normalized
+
 
         # Mapping network
         if class_cond is None and self.class_emb is not None:
@@ -733,17 +744,18 @@ class ImageTransformerDenoiserModelV2(nn.Module):
         # Hourglass transformer
         skips, poses = [], []
         for down_level, merge in zip(self.down_levels, self.merges):
-            x = down_level(x, pos, cond)
+            x = down_level(x, pos, cond) # hDiT block
             skips.append(x)
             poses.append(pos)
-            x = merge(x)
-            pos = downscale_pos(pos)
+            # (B, tile_H, tile_W, width) -> (B, tile_H//2, tile_W//2, new_width)
+            x = merge(x) # patch_size=(2,2)를 사용함으로서 patch가 2배씩 커지는 효과
+            pos = downscale_pos(pos) # patch가 커짐으로서 pos가 바뀐다.
 
         x = self.mid_level(x, pos, cond)
 
         for up_level, split, skip, pos in reversed(list(zip(self.up_levels, self.splits, skips, poses))):
-            x = split(x, skip)
-            x = up_level(x, pos, cond)
+            x = split(x, skip) # patch_size를 두배씩 줄인다. (merge의 반대)
+            x = up_level(x, pos, cond) # hDiT block
 
         # Unpatching
         x = self.out_norm(x)

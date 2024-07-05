@@ -150,66 +150,33 @@ def make_model(config):
     dataset_config = config['dataset']
     num_classes = dataset_config['num_classes']
     config = config['model']
-    if config['type'] == 'image_v1':
-        model = models.ImageDenoiserModelV1(
-            config['input_channels'],
-            config['mapping_out'],
-            config['depths'],
-            config['channels'],
-            config['self_attn_depths'],
-            config['cross_attn_depths'],
-            patch_size=config['patch_size'],
-            dropout_rate=config['dropout_rate'],
-            mapping_cond_dim=config['mapping_cond_dim'] + (9 if config['augment_wrapper'] else 0),
-            unet_cond_dim=config['unet_cond_dim'],
-            cross_cond_dim=config['cross_cond_dim'],
-            skip_stages=config['skip_stages'],
-            has_variance=config['has_variance'],
-        )
-        if config['augment_wrapper']:
-            model = augmentation.KarrasAugmentWrapper(model)
-    elif config['type'] == 'image_transformer_v1':
-        model = models.ImageTransformerDenoiserModelV1(
-            n_layers=config['depth'],
-            d_model=config['width'],
-            d_ff=config['d_ff'],
-            in_features=config['input_channels'],
-            out_features=config['input_channels'],
-            patch_size=config['patch_size'],
-            num_classes=num_classes + 1 if num_classes else 0,
-            dropout=config['dropout_rate'],
-            sigma_data=config['sigma_data'],
-        )
-    elif config['type'] == 'image_transformer_v2':
-        assert len(config['widths']) == len(config['depths'])
-        assert len(config['widths']) == len(config['d_ffs'])
-        assert len(config['widths']) == len(config['self_attns'])
-        assert len(config['widths']) == len(config['dropout_rate'])
-        levels = []
-        for depth, width, d_ff, self_attn, dropout in zip(config['depths'], config['widths'], config['d_ffs'], config['self_attns'], config['dropout_rate']):
-            if self_attn['type'] == 'global':
-                self_attn = models.image_transformer_v2.GlobalAttentionSpec(self_attn.get('d_head', 64))
-            elif self_attn['type'] == 'neighborhood':
-                self_attn = models.image_transformer_v2.NeighborhoodAttentionSpec(self_attn.get('d_head', 64), self_attn.get('kernel_size', 7))
-            elif self_attn['type'] == 'shifted-window':
-                self_attn = models.image_transformer_v2.ShiftedWindowAttentionSpec(self_attn.get('d_head', 64), self_attn['window_size'])
-            elif self_attn['type'] == 'none':
-                self_attn = models.image_transformer_v2.NoAttentionSpec()
-            else:
-                raise ValueError(f'unsupported self attention type {self_attn["type"]}')
-            levels.append(models.image_transformer_v2.LevelSpec(depth, width, d_ff, self_attn, dropout))
-        mapping = models.image_transformer_v2.MappingSpec(config['mapping_depth'], config['mapping_width'], config['mapping_d_ff'], config['mapping_dropout_rate'])
-        model = models.ImageTransformerDenoiserModelV2(
-            levels=levels,
-            mapping=mapping,
-            in_channels=config['input_channels'],
-            out_channels=config['input_channels'],
-            patch_size=config['patch_size'],
-            num_classes=num_classes + 1 if num_classes else 0,
-            mapping_cond_dim=config['mapping_cond_dim'],
-        )
-    else:
-        raise ValueError(f'unsupported model type {config["type"]}')
+
+    assert config['type'] == 'image_transformer_v2' # hDiT
+
+    assert len(config['widths']) == len(config['depths'])
+    assert len(config['widths']) == len(config['d_ffs'])
+    assert len(config['widths']) == len(config['self_attns'])
+    assert len(config['widths']) == len(config['dropout_rate'])
+    levels = []
+    for depth, width, d_ff, self_attn, dropout in zip(config['depths'], config['widths'], config['d_ffs'], config['self_attns'], config['dropout_rate']):
+        if self_attn['type'] == 'global':
+            self_attn = models.image_transformer_v2.GlobalAttentionSpec(self_attn.get('d_head', 64))
+        elif self_attn['type'] == 'neighborhood':
+            self_attn = models.image_transformer_v2.NeighborhoodAttentionSpec(self_attn.get('d_head', 64), self_attn.get('kernel_size', 7))
+        else:
+            raise ValueError(f'unsupported self attention type {self_attn["type"]}')
+        levels.append(models.image_transformer_v2.LevelSpec(depth, width, d_ff, self_attn, dropout))
+    mapping = models.image_transformer_v2.MappingSpec(config['mapping_depth'], config['mapping_width'], config['mapping_d_ff'], config['mapping_dropout_rate'])
+    model = models.ImageTransformerDenoiserModelV2(
+        levels=levels,
+        mapping=mapping,
+        in_channels=config['input_channels'],
+        out_channels=config['input_channels'],
+        patch_size=config['patch_size'],
+        num_classes=num_classes + 1 if num_classes else 0,
+        mapping_cond_dim=config['mapping_cond_dim'],
+    )
+
     return model
 
 
